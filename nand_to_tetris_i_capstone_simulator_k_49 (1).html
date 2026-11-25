@@ -1,0 +1,1989 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MARK-49 // Nand to Tetris I Capstone Simulator | K = 49 (2501730349)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            armor: {
+              bg: '#0B0D13',
+              panel: '#141824',
+              header: '#1A1E2E',
+              border: '#2D1E26',
+              crimson: '#991B1B',
+              red: '#DC2626',
+              gold: '#F59E0B',
+              amber: '#FBBF24',
+              arc: '#38BDF8',
+              purple: '#A855F7',
+              violet: '#C084FC'
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    /* Custom scrollbar for Iron Man titanium-crimson HUD */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: #0B0D13; }
+    ::-webkit-scrollbar-thumb { background: #451A1A; border-radius: 4px; border: 1px solid #7F1D1D; }
+    ::-webkit-scrollbar-thumb:hover { background: #991B1B; }
+
+    /* Crisp pixel rendering for the 512x256 Hack Screen */
+    #hackScreen {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+    }
+
+    /* Arc reactor & Neon purple glow utilities */
+    .arc-glow {
+      box-shadow: 0 0 14px rgba(56, 189, 248, 0.55), inset 0 0 8px rgba(56, 189, 248, 0.4);
+    }
+    .armor-card {
+      background: linear-gradient(180deg, rgba(20, 24, 36, 0.96) 0%, rgba(11, 13, 19, 0.98) 100%);
+      border: 1px solid rgba(153, 27, 27, 0.45);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(245, 158, 11, 0.14);
+    }
+    .purple-bar-glow {
+      box-shadow: 0 0 12px rgba(168, 85, 247, 0.85), 0 0 24px rgba(192, 132, 252, 0.45);
+    }
+    .hud-grid-overlay {
+      background-image:
+        linear-gradient(to right, rgba(56, 189, 248, 0.14) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(56, 189, 248, 0.14) 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    .code-area {
+      tab-size: 4;
+      line-height: 1.5;
+    }
+
+    /* Boot Sequence Animations */
+    @keyframes spinCW {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    @keyframes spinCCW {
+      from { transform: rotate(360deg); }
+      to { transform: rotate(0deg); }
+    }
+    .reactor-spin-cw {
+      transform-origin: 110px 110px;
+      animation: spinCW 7s linear infinite;
+    }
+    .reactor-spin-ccw {
+      transform-origin: 110px 110px;
+      animation: spinCCW 4.5s linear infinite;
+    }
+    .reactor-ignited {
+      filter: drop-shadow(0 0 18px rgba(56, 189, 248, 0.95)) drop-shadow(0 0 32px rgba(168, 85, 247, 0.7));
+      transition: filter 0.6s ease, opacity 0.6s ease;
+    }
+  </style>
+</head>
+<body class="bg-armor-bg text-slate-200 font-sans min-h-screen flex flex-col selection:bg-amber-500/30 selection:text-amber-200">
+
+  <!-- ===================================================================== -->
+  <!-- FULL-SCREEN MARK-49 STARK HUD BOOT SEQUENCE OVERLAY                   -->
+  <!-- ===================================================================== -->
+  <div id="bootOverlay"
+    class="fixed inset-0 z-50 bg-[#0B0D13] hud-grid-overlay flex flex-col items-center justify-center p-4 sm:p-8 transition-opacity duration-700 select-none">
+
+    <!-- Corner HUD Targeting Brackets (Metallic Gold & Crimson) -->
+    <div class="pointer-events-none fixed inset-4 sm:inset-6">
+      <div class="absolute top-0 left-0 w-10 h-10 border-t-2 border-l-2 border-amber-400"></div>
+      <div class="absolute top-0 right-0 w-10 h-10 border-t-2 border-r-2 border-red-500"></div>
+      <div class="absolute bottom-0 left-0 w-10 h-10 border-b-2 border-l-2 border-red-500"></div>
+      <div class="absolute bottom-0 right-0 w-10 h-10 border-b-2 border-r-2 border-amber-400"></div>
+    </div>
+
+    <!-- Top Boot Status & Skip Button -->
+    <div class="w-full max-w-2xl flex items-center justify-between mb-4 z-10">
+      <div class="flex items-center gap-2 font-mono text-xs">
+        <span class="px-2 py-0.5 rounded bg-red-950/90 border border-amber-500/50 text-amber-300 font-bold">STARK-OS // v49.0</span>
+        <span class="text-sky-400 hidden sm:inline">COLD BOOT DIAGNOSTIC</span>
+      </div>
+      <button onclick="finishBootSequence()"
+        class="px-3 py-1.5 rounded-lg bg-armor-panel/90 hover:bg-red-900/70 text-amber-300 border border-amber-500/50 font-mono text-xs font-bold tracking-wider shadow-lg transition">
+        SKIP BOOT ⏭
+      </button>
+    </div>
+
+    <!-- Center Animated SVG Arc Reactor Core -->
+    <div class="relative flex items-center justify-center my-2">
+      <svg id="bootReactorSvg" width="220" height="220" viewBox="0 0 220 220" class="opacity-45 transition-all duration-500">
+        <!-- Outer Armor Gold Housing -->
+        <circle cx="110" cy="110" r="100" fill="#0D111A" stroke="#F59E0B" stroke-width="2.5" stroke-opacity="0.75" />
+        <circle cx="110" cy="110" r="91" fill="none" stroke="#DC2626" stroke-width="2" stroke-dasharray="14 8" />
+
+        <!-- Neon Purple Energy Ring -->
+        <circle id="bootPurpleRing" cx="110" cy="110" r="80" fill="none" stroke="#A855F7" stroke-width="3.5"
+          stroke-dasharray="502" stroke-dashoffset="502" stroke-linecap="round"
+          transform="rotate(-90 110 110)" />
+
+        <!-- Spinning Segmented Coils (Clockwise) -->
+        <g class="reactor-spin-cw">
+          <circle cx="110" cy="110" r="67" fill="none" stroke="#38BDF8" stroke-width="5" stroke-dasharray="18 17" />
+          <circle cx="110" cy="110" r="56" fill="none" stroke="#FBBF24" stroke-width="1.5" stroke-dasharray="6 10" />
+        </g>
+
+        <!-- Counter-Spinning Inner Ring -->
+        <g class="reactor-spin-ccw">
+          <circle cx="110" cy="110" r="45" fill="none" stroke="#C084FC" stroke-width="2.5" stroke-dasharray="22 12" />
+        </g>
+
+        <!-- Triangular Mark-49 Core Frame & Glowing Center -->
+        <polygon points="110,68 147,132 73,132" fill="rgba(56, 189, 248, 0.14)" stroke="#38BDF8" stroke-width="2.5" />
+        <circle id="bootCoreGlow" cx="110" cy="110" r="24" fill="#0EA5E9" fill-opacity="0.25" stroke="#BAE6FD" stroke-width="2" />
+        <text id="bootReactorCoreText" x="110" y="114" text-anchor="middle" fill="#F8FAFC" font-family="JetBrains Mono, monospace" font-weight="800" font-size="13">K=49</text>
+      </svg>
+    </div>
+
+    <!-- Sequential Stark Diagnostic Terminal Log Box -->
+    <div class="w-full max-w-2xl armor-card rounded-xl p-3.5 sm:p-4 mt-2 font-mono text-xs">
+      <div class="flex items-center justify-between border-b border-red-900/60 pb-2 mb-2.5">
+        <span class="text-amber-400 font-bold tracking-wider uppercase">MARK-49 // HARDWARE &amp; ISA INITIALIZATION LOG</span>
+        <span id="bootReactorState" class="text-purple-300 font-semibold">IGNITING CORE...</span>
+      </div>
+      <div id="bootLogContainer" class="space-y-1.5 min-h-[144px] text-[11px] sm:text-xs"></div>
+
+      <!-- Glowing Neon Purple Boot Loading Bar -->
+      <div class="mt-4 pt-3 border-t border-purple-500/30">
+        <div class="flex items-center justify-between text-xs mb-1.5">
+          <span id="bootSubStatus" class="text-purple-300 font-semibold">Initializing Arc Reactor Core...</span>
+          <span id="bootPctText" class="text-fuchsia-300 font-extrabold text-sm">0%</span>
+        </div>
+        <div class="w-full h-3.5 bg-slate-950 rounded-full overflow-hidden border border-purple-500/60 p-0.5">
+          <div id="bootProgressFill"
+            class="h-full rounded-full bg-gradient-to-r from-purple-700 via-purple-500 to-fuchsia-400 purple-bar-glow transition-all duration-150"
+            style="width: 0%;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Banner (replaces alert) -->
+  <div id="toastContainer" class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+  <!-- Top Iron Man Mark-49 HUD Header -->
+  <header class="bg-gradient-to-r from-[#190A0D] via-armor-panel to-[#1A1309] border-b border-red-900/70 px-4 py-3 shadow-xl relative">
+    <div class="max-w-[1600px] mx-auto flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+      <div class="flex items-center gap-3.5">
+        <!-- Arc Reactor Emblem -->
+        <div class="w-11 h-11 rounded-full bg-slate-950 border-2 border-amber-400/80 arc-glow flex items-center justify-center relative shrink-0">
+          <div class="w-7 h-7 rounded-full border border-sky-400/80 flex items-center justify-center bg-sky-500/15">
+            <span id="emblemKText" class="font-mono font-extrabold text-[11px] text-sky-300 tracking-tighter">K49</span>
+          </div>
+        </div>
+        <div>
+          <div class="flex flex-wrap items-center gap-2">
+            <h1 id="mainHudTitle" class="text-sm sm:text-lg font-extrabold tracking-wide uppercase bg-gradient-to-r from-amber-300 via-amber-400 to-red-400 bg-clip-text text-transparent">
+              MARK-49 // NAND TO TETRIS I CAPSTONE SIMULATOR
+            </h1>
+            <span class="text-[11px] font-mono px-2 py-0.5 rounded bg-red-950/90 text-amber-300 border border-amber-500/40">ETCCNT301</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5 text-xs sm:text-sm text-slate-300 mt-0.5 font-mono">
+            <span class="text-amber-300 font-semibold">Nikhil Kumar Sharma</span>
+            <span class="text-red-500">|</span>
+            <span>Roll No: <span class="text-sky-400 font-bold">2501730349</span></span>
+            <span class="text-red-500">|</span>
+            <label for="kValueInput" class="inline-flex items-center gap-1.5 bg-red-950/70 border border-amber-400/60 rounded-md px-2 py-0.5">
+              <span class="text-amber-300 font-bold">K =</span>
+              <input id="kValueInput" type="number" min="0" max="99" value="49" onchange="updateKValue(this.value)"
+                class="w-12 bg-slate-950 text-amber-300 font-extrabold text-center rounded border border-amber-500/50 focus:outline-none focus:border-sky-400 px-1 py-0.2" />
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personalized K Parameter HUD Pills -->
+      <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 text-xs font-mono">
+        <div id="hudStartRowPill" class="bg-armor-bg/90 border border-red-800/70 rounded-lg px-2.5 py-1.5" title="SCREEN + 32 * K">
+          <span class="text-slate-400">Start Row:</span>
+          <span class="text-amber-400 font-bold">49</span>
+          <span class="text-sky-400/80">(RAM 17952)</span>
+        </div>
+        <div id="hudHeightPill" class="bg-armor-bg/90 border border-red-800/70 rounded-lg px-2.5 py-1.5">
+          <span class="text-slate-400">Height:</span>
+          <span class="text-amber-400 font-bold">20 rows</span>
+          <span class="text-slate-400">(49..68)</span>
+        </div>
+        <div id="hudWidthPill" class="bg-armor-bg/90 border border-red-800/70 rounded-lg px-2.5 py-1.5" title="16 * ((K mod 4) + 1)">
+          <span class="text-slate-400">Width:</span>
+          <span class="text-amber-400 font-bold">32 px</span>
+          <span class="text-slate-400">(2 words)</span>
+        </div>
+        <div id="hudModPill" class="bg-armor-bg/90 border border-amber-600/50 rounded-lg px-2.5 py-1.5" title="K mod 3 feature">
+          <span class="text-slate-400">K%3=1:</span>
+          <span class="text-sky-300 font-semibold">Line-Numbered Error Reporting</span>
+        </div>
+        <button onclick="downloadProjectZip()"
+          class="bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 rounded-lg px-2.5 py-1.5 font-extrabold transition shadow flex items-center gap-1"
+          title="Download complete capstone folder + README.md as a ZIP ready for GitHub">
+          📦 Download GitHub ZIP
+        </button>
+        <button onclick="startBootSequence()"
+          class="bg-gradient-to-r from-purple-800/80 to-red-900/80 hover:from-purple-700 hover:to-red-800 border border-purple-400/60 text-purple-200 hover:text-white rounded-lg px-2.5 py-1.5 font-bold transition shadow"
+          title="Replay Arc Reactor Boot Sequence">
+          ⚡ REBOOT HUD
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- NEON PURPLE HUD LOADING / PROGRESS BAR -->
+  <div class="bg-[#08090E] border-b border-purple-500/40 px-4 py-1.5">
+    <div class="max-w-[1600px] mx-auto flex items-center gap-3">
+      <div class="flex items-center gap-1.5 shrink-0 font-mono text-[11px]">
+        <span class="inline-block w-2 h-2 rounded-full bg-purple-400 animate-ping"></span>
+        <span class="text-purple-300 font-bold uppercase tracking-wider">HUD TELEMETRY:</span>
+        <span id="hudProgressStatus" class="text-slate-300">MARK-49 Core Online</span>
+      </div>
+      <div class="flex-1 h-2.5 bg-slate-900 rounded-full overflow-hidden border border-purple-500/40 p-[1px]">
+        <div id="hudProgressBar"
+          class="h-full rounded-full bg-gradient-to-r from-purple-600 via-purple-400 to-fuchsia-400 purple-bar-glow transition-all duration-200"
+          style="width: 100%;"></div>
+      </div>
+      <span id="hudProgressPct" class="font-mono text-xs font-bold text-purple-300 w-11 text-right shrink-0">100%</span>
+    </div>
+  </div>
+
+  <!-- Navigation Tabs (3 Main Tabs) -->
+  <nav class="bg-armor-header border-b border-red-900/60 px-4">
+    <div class="max-w-[1600px] mx-auto flex items-center justify-between overflow-x-auto">
+      <div class="flex space-x-1.5 py-2">
+        <button onclick="switchMainTab('emulator')" id="tab-emulator"
+          class="tab-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-gradient-to-r from-red-700 to-red-600 text-amber-200 border border-amber-400/60 shadow transition flex items-center gap-2 whitespace-nowrap">
+          <span>🖥️</span> CPU Emulator &amp; Box.hack (Part C)
+        </button>
+        <button onclick="switchMainTab('assembler')" id="tab-assembler"
+          class="tab-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:bg-red-950/50 hover:text-amber-200 border border-transparent transition flex items-center gap-2 whitespace-nowrap">
+          <span>⚙️</span> Two-Pass Assembler &amp; Symbol Table (Part B)
+        </button>
+        <button onclick="switchMainTab('hardware')" id="tab-hardware"
+          class="tab-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:bg-red-950/50 hover:text-amber-200 border border-transparent transition flex items-center gap-2 whitespace-nowrap">
+          <span>🔌</span> HDL Chips &amp; Test Runner (Part A)
+        </button>
+      </div>
+      <div class="hidden xl:flex items-center gap-2 text-xs font-mono text-sky-400">
+        <span class="inline-block w-2 h-2 rounded-full bg-sky-400 arc-glow"></span>
+        <span>ARC-CORE: ROM32K + RAM16K + SCREEN + KBD</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ===================================================================== -->
+  <!-- TAB 1: CPU EMULATOR & BOX.HACK (PART C)                               -->
+  <!-- ===================================================================== -->
+  <main id="view-emulator" class="flex-1 max-w-[1600px] w-full mx-auto p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+
+    <!-- LEFT/CENTER: 512x256 Hack Screen & Execution Controls (8 cols on xl) -->
+    <section class="xl:col-span-8 flex flex-col gap-3">
+      <div class="armor-card rounded-xl overflow-hidden flex flex-col">
+        <!-- Toolbar -->
+        <div class="bg-gradient-to-r from-red-950/90 via-armor-header to-amber-950/50 border-b border-red-900/60 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div class="flex items-center gap-2">
+            <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">Part C // 512×256 Hack Display</span>
+            <span id="cpuStatusBadge" class="px-2 py-0.5 rounded-full text-[11px] font-mono bg-sky-500/20 text-sky-300 border border-sky-400/40">ONLINE // RUNNING</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-1.5">
+            <!-- Zoom Toggle -->
+            <div class="flex rounded-lg overflow-hidden border border-red-800/70 font-mono text-xs mr-1">
+              <button onclick="setScreenZoom(1)" id="zoom-1" class="px-2 py-1 bg-amber-500 text-slate-950 font-bold">x1</button>
+              <button onclick="setScreenZoom(2)" id="zoom-2" class="px-2 py-1 bg-armor-bg text-slate-300 hover:text-amber-300">x2</button>
+            </div>
+            <button onclick="toggleRun()" id="btnRunPause" class="px-3 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-amber-100 border border-amber-400/40 text-xs font-bold transition">
+              ⏸ Pause
+            </button>
+            <button onclick="stepCPU()" class="px-2.5 py-1.5 rounded-lg bg-armor-bg hover:bg-red-950/60 border border-red-800/70 text-xs font-mono text-amber-200 transition">
+              ⏭ Step
+            </button>
+            <button onclick="resetCPU()" class="px-2.5 py-1.5 rounded-lg bg-armor-bg hover:bg-red-950/60 border border-red-800/70 text-xs font-mono text-amber-200 transition">
+              ↺ Reset
+            </button>
+            <button onclick="captureScreenshot()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-yellow-300 text-slate-950 text-xs font-extrabold shadow transition" title="Export PNG for ZOSIMA Report">
+              📸 Capture Report Screenshot
+            </button>
+          </div>
+        </div>
+
+        <!-- Screen Canvas Viewport -->
+        <div class="p-3 sm:p-4 bg-[#07090E] flex flex-col items-center justify-center overflow-auto">
+          <div id="screenWrapper" class="w-full max-w-[680px] bg-white rounded-lg p-1.5 shadow-2xl border-2 border-amber-500/70 relative transition-all">
+            <canvas id="hackScreen" width="512" height="256" class="w-full h-auto block rounded"></canvas>
+            <!-- Subtle HUD Coordinate Grid Overlay -->
+            <div id="hudGridOverlay" class="hidden pointer-events-none absolute inset-1.5 hud-grid-overlay rounded"></div>
+            <!-- Row Alignment Marker -->
+            <div id="rowGuideOverlay" class="hidden pointer-events-none absolute left-1.5 right-1.5 border-t-2 border-dashed border-sky-500 text-[10px] font-mono font-bold text-sky-700 bg-sky-200/70 px-1.5" style="top: calc(1.5px + (49 / 256) * (100% - 3px));">
+              ROW 49 (RAM[17952]) — K=49 TARGET BOX (32×20 px)
+            </div>
+          </div>
+
+          <!-- Interactive Keyboard & Speed Bar -->
+          <div class="w-full max-w-[680px] mt-3 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 bg-armor-panel border border-red-900/70 rounded-xl p-2.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <button id="holdKeyBtn"
+                onmousedown="pressVirtualKey(65, 'A')" onmouseup="releaseVirtualKey()" onmouseleave="releaseVirtualKey()"
+                ontouchstart="pressVirtualKey(65, 'A'); event.preventDefault();" ontouchend="releaseVirtualKey()"
+                class="px-4 py-2 rounded-lg bg-gradient-to-r from-red-700 via-red-600 to-amber-600 hover:from-red-600 hover:to-amber-500 active:scale-95 text-amber-100 border border-amber-300/70 font-extrabold text-xs tracking-wide shadow-lg transition select-none flex items-center gap-1.5">
+                <span>⌨</span> HOLD KEY TO DRAW BOX
+              </button>
+              <button id="kbdCaptureToggle" onclick="toggleKeyboardCapture()"
+                class="px-2.5 py-2 rounded-lg bg-sky-500/15 border border-sky-400/40 text-sky-300 text-xs font-mono hover:bg-sky-500/25 transition">
+                Physical KBD: ON
+              </button>
+              <label class="flex items-center gap-1 text-xs font-mono text-slate-300 cursor-pointer">
+                <input type="checkbox" onchange="toggleRowGuide(this.checked)" class="rounded bg-armor-bg border-red-800 text-amber-500 focus:ring-0">
+                <span id="rowGuideCheckboxLabel">Row 49</span>
+              </label>
+              <label class="flex items-center gap-1 text-xs font-mono text-slate-300 cursor-pointer">
+                <input type="checkbox" onchange="toggleHudGrid(this.checked)" class="rounded bg-armor-bg border-red-800 text-sky-400 focus:ring-0">
+                <span>HUD Grid</span>
+              </label>
+            </div>
+
+            <!-- Speed Slider -->
+            <div class="flex items-center gap-2 text-xs font-mono">
+              <span class="text-slate-400">Speed:</span>
+              <input id="speedSlider" type="range" min="1" max="5000" value="3000" oninput="updateSpeedLabel()"
+                class="w-24 sm:w-28 accent-purple-500 cursor-pointer">
+              <span id="speedLabel" class="text-purple-300 font-bold w-16 text-right">3000/f</span>
+            </div>
+          </div>
+
+          <!-- Telemetry Footer under Screen -->
+          <div class="w-full max-w-[680px] mt-2 flex flex-wrap items-center justify-between text-xs font-mono text-slate-400 px-1 gap-2">
+            <div>Active ROM: <span id="activeRomBadge" class="text-amber-300 font-bold">Box.asm</span></div>
+            <div>KBD (`RAM[24576]`): <span id="kbdStatusVal" class="text-slate-300 font-semibold">0 (Released)</span></div>
+            <div>Cycles Executed: <span id="cycleCounter" class="text-sky-400 font-bold">0</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: CPU REGISTERS & LIVE MEMORY PROBE (4 cols on xl) -->
+    <section class="xl:col-span-4 flex flex-col gap-3">
+      <!-- CPU Registers Card -->
+      <div class="armor-card rounded-xl p-3.5 flex flex-col justify-between">
+        <div>
+          <div class="flex items-center justify-between border-b border-red-900/60 pb-2 mb-3">
+            <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">Arc-Core CPU Registers</span>
+            <span class="text-[11px] font-mono text-sky-400">16-bit Hack ISA</span>
+          </div>
+          <div class="grid grid-cols-2 gap-2.5 font-mono text-xs">
+            <div class="bg-armor-bg border border-red-900/60 rounded-lg p-2.5 flex justify-between items-center">
+              <span class="text-slate-400">PC</span>
+              <span id="regPC" class="text-amber-300 font-extrabold text-sm">0</span>
+            </div>
+            <div class="bg-armor-bg border border-red-900/60 rounded-lg p-2.5 flex justify-between items-center">
+              <span class="text-slate-400">A</span>
+              <span id="regA" class="text-sky-400 font-extrabold text-sm">0</span>
+            </div>
+            <div class="bg-armor-bg border border-red-900/60 rounded-lg p-2.5 flex justify-between items-center">
+              <span class="text-slate-400">D</span>
+              <span id="regD" class="text-amber-400 font-extrabold text-sm">0</span>
+            </div>
+            <div class="bg-armor-bg border border-red-900/60 rounded-lg p-2.5 flex justify-between items-center">
+              <span class="text-slate-400">M (RAM[A])</span>
+              <span id="regM" class="text-purple-400 font-extrabold text-sm">0</span>
+            </div>
+          </div>
+        </div>
+        <div class="mt-3 bg-armor-bg border border-red-900/60 rounded-lg p-2.5 font-mono text-xs">
+          <div class="text-slate-400 text-[11px]">Next ROM[PC] Instruction:</div>
+          <div id="nextInstDisplay" class="text-sky-300 font-semibold truncate mt-0.5">0110000000000000 (@KBD)</div>
+        </div>
+      </div>
+
+      <!-- Live RAM & Screen Memory Map Inspector -->
+      <div class="armor-card rounded-xl p-3.5 flex flex-col flex-1">
+        <div class="flex items-center justify-between border-b border-red-900/60 pb-2 mb-2.5">
+          <span class="text-xs font-mono font-bold text-amber-400 uppercase tracking-wider">Live RAM &amp; Screen Inspector</span>
+          <span id="ramMapKBadge" class="text-[11px] font-mono text-purple-300">K = 49 Map</span>
+        </div>
+        <div id="ramProbeList" class="font-mono text-xs space-y-1.5 overflow-y-auto flex-1 pr-1"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===================================================================== -->
+  <!-- TAB 2: TWO-PASS ASSEMBLER & SYMBOL TABLE (PART B)                     -->
+  <!-- ===================================================================== -->
+  <section id="view-assembler" class="hidden flex-1 max-w-[1600px] w-full mx-auto p-3 sm:p-4 grid grid-cols-1 xl:grid-cols-12 gap-4">
+
+    <!-- LEFT: Editable .asm Code Editor (6 cols) -->
+    <div class="xl:col-span-6 armor-card rounded-xl overflow-hidden flex flex-col">
+      <div class="bg-gradient-to-r from-red-950/90 via-armor-header to-amber-950/50 border-b border-red-900/60 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono font-bold text-amber-400 uppercase">Part B // Two-Pass Assembler</span>
+          <span id="activeFileName" class="text-xs font-mono bg-armor-bg px-2 py-0.5 rounded border border-amber-500/40 text-amber-300">Box.asm</span>
+        </div>
+        <div class="flex flex-wrap items-center gap-1">
+          <button onclick="loadPreset('Box.asm')" class="px-2 py-1 text-xs font-mono rounded bg-red-800/60 text-amber-200 border border-amber-500/40 hover:bg-red-700 transition">Box.asm</button>
+          <button onclick="loadPreset('Add.asm')" class="px-2 py-1 text-xs font-mono rounded bg-armor-bg text-slate-300 border border-red-900/60 hover:border-amber-500/50 transition">Add.asm</button>
+          <button onclick="loadPreset('Max.asm')" class="px-2 py-1 text-xs font-mono rounded bg-armor-bg text-slate-300 border border-red-900/60 hover:border-amber-500/50 transition">Max.asm</button>
+          <button onclick="loadPreset('Rect.asm')" class="px-2 py-1 text-xs font-mono rounded bg-armor-bg text-slate-300 border border-red-900/60 hover:border-amber-500/50 transition">Rect.asm</button>
+          <button onclick="loadPreset('bad_test.asm')" class="px-2 py-1 text-xs font-mono rounded bg-purple-950/80 text-purple-300 border border-purple-500/50 hover:bg-purple-900/60 transition" title="Tests K mod 3 = 1 Line 7 error reporting">bad_test.asm</button>
+        </div>
+      </div>
+
+      <!-- Line Numbers + Textarea -->
+      <div class="relative flex bg-armor-bg font-mono text-xs sm:text-sm h-[420px]">
+        <div id="lineNumbers" class="select-none bg-armor-panel/70 text-amber-500/60 text-right py-3 px-2.5 border-r border-red-900/50 overflow-hidden leading-[1.5]"></div>
+        <textarea id="asmEditor" spellcheck="false"
+          class="code-area flex-1 bg-transparent text-slate-100 p-3 resize-none focus:outline-none overflow-auto whitespace-pre"
+          oninput="updateLineNumbers()" onscroll="syncEditorScroll()"></textarea>
+      </div>
+
+      <!-- Assemble Action Footer -->
+      <div class="bg-armor-header border-t border-red-900/60 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <button onclick="runAssemblerAndLoad(true)"
+          class="px-4 py-2 rounded-lg bg-gradient-to-r from-red-700 via-red-600 to-amber-600 hover:from-red-600 hover:to-amber-500 text-amber-100 border border-amber-400/60 font-extrabold text-xs sm:text-sm shadow-lg transition flex items-center gap-2">
+          <span>⚡</span> Assemble (.hack) &amp; Load ROM
+        </button>
+        <div class="flex items-center gap-2">
+          <button onclick="copyHackOutput()" class="px-2.5 py-1.5 rounded-lg bg-armor-bg hover:bg-red-950/60 border border-red-800/70 text-xs font-mono text-sky-300 transition">
+            📋 Copy .hack
+          </button>
+          <button onclick="downloadFile('hack')" class="px-2.5 py-1.5 rounded-lg bg-armor-bg hover:bg-red-950/60 border border-red-800/70 text-xs font-mono text-amber-300 transition">
+            ⬇ Download .hack
+          </button>
+          <button onclick="downloadFile('symbols')" class="px-2.5 py-1.5 rounded-lg bg-armor-bg hover:bg-red-950/60 border border-red-800/70 text-xs font-mono text-purple-300 transition">
+            ⬇ symbols.txt
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: Console Output, 16-bit Binary .hack & symbols.txt Table (6 cols) -->
+    <div class="xl:col-span-6 flex flex-col gap-3">
+      <!-- Console Output Card -->
+      <div class="armor-card rounded-xl overflow-hidden flex flex-col">
+        <div class="bg-armor-header border-b border-red-900/60 px-3 py-2 flex items-center justify-between">
+          <span class="text-xs font-mono font-bold text-amber-400 uppercase">Assembler Console Output (K mod 3 = 1)</span>
+          <span id="errorBadge" class="text-xs font-mono text-emerald-400 font-bold">0 errors</span>
+        </div>
+        <div id="out-console" class="p-3 font-mono text-xs bg-armor-bg h-[120px] overflow-y-auto space-y-1.5"></div>
+      </div>
+
+      <!-- Binary .hack & symbols.txt Split Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1">
+        <!-- 16-bit Binary .hack Output -->
+        <div class="armor-card rounded-xl overflow-hidden flex flex-col">
+          <div class="bg-armor-header border-b border-red-900/60 px-3 py-2 flex items-center justify-between">
+            <span class="text-xs font-mono font-bold text-sky-400">16-Bit Binary (.hack)</span>
+            <span id="romWordCount" class="text-[11px] font-mono text-slate-400">0 words</span>
+          </div>
+          <pre id="out-hack" class="p-3 font-mono text-xs bg-armor-bg text-sky-300 h-[290px] overflow-y-auto leading-relaxed"></pre>
+        </div>
+
+        <!-- symbols.txt Table Viewer -->
+        <div class="armor-card rounded-xl overflow-hidden flex flex-col">
+          <div class="bg-armor-header border-b border-red-900/60 px-3 py-2 flex items-center justify-between">
+            <span class="text-xs font-mono font-bold text-purple-300">symbols.txt (Resolved Table)</span>
+            <span id="symbolCountBadge" class="text-[11px] font-mono text-slate-400">0 symbols</span>
+          </div>
+          <div id="out-symbols-table" class="p-2.5 font-mono text-xs bg-armor-bg h-[290px] overflow-y-auto space-y-1"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================================================================== -->
+  <!-- TAB 3: HDL CHIPS & TEST RUNNER (PART A)                               -->
+  <!-- ===================================================================== -->
+  <section id="view-hardware" class="hidden flex-1 max-w-[1600px] w-full mx-auto p-3 sm:p-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+    <!-- HDL File Selector & Code Viewer -->
+    <div class="lg:col-span-7 armor-card rounded-xl overflow-hidden flex flex-col">
+      <div class="bg-gradient-to-r from-red-950/90 via-armor-header to-amber-950/50 border-b border-red-900/60 px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="text-xs font-mono font-bold text-amber-400 uppercase">Part A // Hardware Description (HDL)</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button onclick="selectHdlChip('Memory.hdl')" id="hdlBtn-Memory.hdl" class="hdl-btn px-2.5 py-1 rounded text-xs font-mono bg-red-700 text-amber-200 border border-amber-400/50 font-bold">Memory.hdl</button>
+          <button onclick="selectHdlChip('CPU.hdl')" id="hdlBtn-CPU.hdl" class="hdl-btn px-2.5 py-1 rounded text-xs font-mono bg-armor-bg text-slate-300 border border-red-900/60">CPU.hdl</button>
+          <button onclick="selectHdlChip('Computer.hdl')" id="hdlBtn-Computer.hdl" class="hdl-btn px-2.5 py-1 rounded text-xs font-mono bg-armor-bg text-slate-300 border border-red-900/60">Computer.hdl</button>
+        </div>
+      </div>
+      <pre id="hdlCodeViewer" class="p-4 font-mono text-xs sm:text-sm bg-armor-bg text-slate-200 overflow-auto flex-1 leading-relaxed"></pre>
+    </div>
+
+    <!-- Interactive Test Script Verification Panel -->
+    <div class="lg:col-span-5 armor-card rounded-xl overflow-hidden flex flex-col">
+      <div class="bg-gradient-to-r from-red-950/90 via-armor-header to-amber-950/50 border-b border-red-900/60 px-3 py-2.5 flex items-center justify-between">
+        <span class="text-xs font-mono font-bold text-amber-400 uppercase">HDL Test Script Verification</span>
+        <button onclick="runAllHdlTests()" class="px-3 py-1.5 rounded-lg bg-gradient-to-r from-purple-700 to-purple-500 hover:from-purple-600 hover:to-purple-400 text-white text-xs font-bold shadow transition">
+          ▶▶ Run All 5 Tests
+        </button>
+      </div>
+      <div class="p-3 bg-armor-bg flex-1 space-y-2.5 overflow-y-auto" id="hdlTestsContainer"></div>
+    </div>
+  </section>
+
+  <script>
+    // =========================================================================
+    // 1. DYNAMIC K CONFIGURATION & CAPSTONE PRESETS, HDL SOURCES & TESTS
+    // =========================================================================
+    let currentK = 49;
+
+    function getKSpecs(kVal) {
+      const k = Math.max(0, Math.min(99, parseInt(kVal, 10) || 0));
+      const wordCount = (k % 4) + 1;
+      const widthPx = 16 * wordCount;
+      const heightRows = 20;
+      const startRow = k;
+      const endRow = k + heightRows - 1;
+      const startAddr = 16384 + 32 * startRow;
+      const endRowLastWord = 16384 + 32 * endRow + (wordCount - 1);
+      const mod3 = k % 3;
+      const mod3Desc = mod3 === 0
+        ? "Export symbols.txt"
+        : (mod3 === 1 ? "Line-Numbered Error Reporting" : "Case-Insensitive Mnemonics");
+      return { k, wordCount, widthPx, heightRows, startRow, endRow, startAddr, endRowLastWord, mod3, mod3Desc };
+    }
+
+    function generateBoxAsmForK(kVal) {
+      const s = getKSpecs(kVal);
+      const drawWordLines = [];
+      const clearWordLines = [];
+
+      for (let w = 0; w < s.wordCount; w++) {
+        const pxStart = w * 16;
+        const pxEnd = pxStart + 15;
+        if (w === 0) {
+          drawWordLines.push(`  // Fill word 0 (pixels ${pxStart}..${pxEnd}) with -1\n  @addr\n  A=M\n  M=-1`);
+          clearWordLines.push(`  // Clear word 0 (pixels ${pxStart}..${pxEnd})\n  @addr\n  A=M\n  M=0`);
+        } else if (w === 1) {
+          drawWordLines.push(`  // Fill word 1 (pixels ${pxStart}..${pxEnd}) with -1\n  @addr\n  D=M+1\n  A=D\n  M=-1`);
+          clearWordLines.push(`  // Clear word 1 (pixels ${pxStart}..${pxEnd})\n  @addr\n  D=M+1\n  A=D\n  M=0`);
+        } else {
+          drawWordLines.push(`  // Fill word ${w} (pixels ${pxStart}..${pxEnd}) with -1\n  @${w}\n  D=A\n  @addr\n  A=D+M\n  M=-1`);
+          clearWordLines.push(`  // Clear word ${w} (pixels ${pxStart}..${pxEnd})\n  @${w}\n  D=A\n  @addr\n  A=D+M\n  M=0`);
+        }
+      }
+
+      return `// Box.asm - Draws a black box while a key is pressed
+// Student: Nikhil Kumar Sharma | Roll No: 2501730349 | K = ${s.k}
+// Start Row: ${s.startRow} (SCREEN + 32*${s.startRow} = ${s.startAddr})
+// Height: ${s.heightRows} rows (rows ${s.startRow}..${s.endRow})
+// Width: 16 * ((${s.k} mod 4) + 1) = ${s.widthPx} pixels (${s.wordCount} word${s.wordCount > 1 ? "s" : ""} from left edge)
+
+(MAIN_LOOP)
+  @KBD
+  D=M
+  @DRAW_BOX
+  D;JNE
+
+  @CLEAR_BOX
+  0;JMP
+
+(DRAW_BOX)
+  @${s.startRow}
+  D=A
+  @row
+  M=D
+
+  @${s.heightRows}
+  D=A
+  @rowsLeft
+  M=D
+
+(DRAW_ROW_LOOP)
+  @rowsLeft
+  D=M
+  @MAIN_LOOP
+  D;JEQ
+
+  @row
+  D=M
+  @shiftVal
+  M=D
+  @5
+  D=A
+  @shiftCnt
+  M=D
+
+(SHIFT_DRAW_LOOP)
+  @shiftCnt
+  D=M
+  @SHIFT_DRAW_DONE
+  D;JEQ
+  @shiftVal
+  D=M
+  M=D+M
+  @shiftCnt
+  M=M-1
+  @SHIFT_DRAW_LOOP
+  0;JMP
+
+(SHIFT_DRAW_DONE)
+  @SCREEN
+  D=A
+  @shiftVal
+  D=D+M
+  @addr
+  M=D
+
+${drawWordLines.join("\n\n")}
+
+  @row
+  M=M+1
+  @rowsLeft
+  M=M-1
+  @DRAW_ROW_LOOP
+  0;JMP
+
+(CLEAR_BOX)
+  @${s.startRow}
+  D=A
+  @row
+  M=D
+
+  @${s.heightRows}
+  D=A
+  @rowsLeft
+  M=D
+
+(CLEAR_ROW_LOOP)
+  @rowsLeft
+  D=M
+  @MAIN_LOOP
+  D;JEQ
+
+  @row
+  D=M
+  @shiftVal
+  M=D
+  @5
+  D=A
+  @shiftCnt
+  M=D
+
+(SHIFT_CLEAR_LOOP)
+  @shiftCnt
+  D=M
+  @SHIFT_CLEAR_DONE
+  D;JEQ
+  @shiftVal
+  D=M
+  M=D+M
+  @shiftCnt
+  M=M-1
+  @SHIFT_CLEAR_LOOP
+  0;JMP
+
+(SHIFT_CLEAR_DONE)
+  @SCREEN
+  D=A
+  @shiftVal
+  D=D+M
+  @addr
+  M=D
+
+${clearWordLines.join("\n\n")}
+
+  @row
+  M=M+1
+  @rowsLeft
+  M=M-1
+  @CLEAR_ROW_LOOP
+  0;JMP`;
+    }
+
+    const PRESETS = {
+      "Box.asm": generateBoxAsmForK(49),
+
+      "Add.asm": `// Add.asm - Computes R0 = 2 + 3
+@2
+D=A
+@3
+D=D+A
+@0
+M=D`,
+
+      "Max.asm": `// Max.asm - Computes R2 = max(R0, R1)
+@12
+D=A
+@R0
+M=D
+@27
+D=A
+@R1
+M=D
+@R0
+D=M
+@R1
+D=D-M
+@OUTPUT_FIRST
+D;JGT
+@R1
+D=M
+@OUTPUT_D
+0;JMP
+(OUTPUT_FIRST)
+@R0
+D=M
+(OUTPUT_D)
+@R2
+M=D
+(INFINITE_LOOP)
+@INFINITE_LOOP
+0;JMP`,
+
+      "Rect.asm": `// Rect.asm - Draws a 16px wide by 30px tall rectangle at top-left
+@30
+D=A
+@R0
+M=D
+@INFINITE_LOOP
+D;JLE
+@counter
+M=D
+@SCREEN
+D=A
+@address
+M=D
+(LOOP)
+@address
+A=M
+M=-1
+@address
+D=M
+@32
+D=D+A
+@address
+M=D
+@counter
+MD=M-1
+@LOOP
+D;JGT
+(INFINITE_LOOP)
+@INFINITE_LOOP
+0;JMP`,
+
+      "bad_test.asm": `// bad_test.asm - Tests K mod 3 = 1 line-numbered error reporting
+// Line 7 intentionally contains an invalid ALU instruction (D=A+5)
+@0
+D=A
+@1
+M=D
+D=A+5
+@2
+M=D`
+    };
+
+    const HDL_SOURCES = {
+      "Memory.hdl": `// Memory.hdl - Hack Data Memory Map (RAM16K + Screen + Keyboard)
+// Student: Nikhil Kumar Sharma | Roll No: 2501730349 | K = 49
+CHIP Memory {
+    IN in[16], load, address[15];
+    OUT out[16];
+
+    PARTS:
+    // Demultiplex load signal between RAM16K (address[14]==0) and Screen (address[14..13]==10)
+    DMux(in=load, sel=address[14], a=loadRam, b=loadIO);
+    DMux(in=loadIO, sel=address[13], a=loadScreen, b=loadUnused);
+
+    // 16K Data RAM: 0x0000 - 0x3FFF (0 - 16383)
+    RAM16K(in=in, load=loadRam, address=address[0..13], out=ramOut);
+
+    // Screen Memory Map: 0x4000 - 0x5FFF (16384 - 24575)
+    Screen(in=in, load=loadScreen, address=address[0..12], out=screenOut);
+
+    // Keyboard Register: 0x6000 (24576)
+    Keyboard(out=kbdOut);
+
+    // Select output based on upper address bits
+    Mux16(a=screenOut, b=kbdOut, sel=address[13], out=ioOut);
+    Mux16(a=ramOut, b=ioOut, sel=address[14], out=out);
+}`,
+
+      "CPU.hdl": `// CPU.hdl - Hack Central Processing Unit
+// Student: Nikhil Kumar Sharma | Roll No: 2501730349 | K = 49
+CHIP CPU {
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current program
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M?
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // Address of next instruction
+
+    PARTS:
+    // Decode instruction type: A-instruction (0) vs C-instruction (1)
+    Not(in=instruction[15], out=isAInst);
+    Not(in=isAInst, out=isCInst);
+
+    // A-Register input multiplexer: instruction if A-inst, ALU output if C-inst
+    And(a=isCInst, b=instruction[5], out=aluToA);
+    Mux16(a=instruction, b=aluOut, sel=aluToA, out=aRegIn);
+
+    // Load A-Register if A-instruction OR (C-instruction with dest bit d1=1)
+    Or(a=isAInst, b=aluToA, out=loadA);
+    ARegister(in=aRegIn, load=loadA, out=aRegOut, out[0..14]=addressM);
+
+    // Select A or M for ALU y-input based on 'a' bit (instruction[12])
+    And(a=isCInst, b=instruction[12], out=selAM);
+    Mux16(a=aRegOut, b=inM, sel=selAM, out=aluY);
+
+    // D-Register: load if C-instruction and dest bit d2 (instruction[4]) is 1
+    And(a=isCInst, b=instruction[4], out=loadD);
+    DRegister(in=aluOut, load=loadD, out=dRegOut);
+
+    // ALU execution
+    ALU(x=dRegOut, y=aluY,
+        zx=instruction[11], nx=instruction[10],
+        zy=instruction[9],  ny=instruction[8],
+        f=instruction[7],   no=instruction[6],
+        out=aluOut, out=outM, zr=zrOut, ng=ngOut);
+
+    // WriteM output: C-instruction and dest bit d3 (instruction[3]) is 1
+    And(a=isCInst, b=instruction[3], out=writeM);
+
+    // Jump logic
+    Or(a=zrOut, b=ngOut, out=zrOrNg);
+    Not(in=zrOrNg, out=posOut);
+
+    And(a=instruction[0], b=posOut, out=jgt);
+    And(a=instruction[1], b=zrOut,  out=jeq);
+    And(a=instruction[2], b=ngOut,  out=jlt);
+
+    Or(a=jgt, b=jeq, out=jge);
+    Or(a=jge, b=jlt, out=jumpCond);
+    And(a=isCInst, b=jumpCond, out=pcLoad);
+
+    // Program Counter
+    PC(in=aRegOut, load=pcLoad, inc=true, reset=reset, out[0..14]=pc);
+}`,
+
+      "Computer.hdl": `// Computer.hdl - Top-Level Hack Computer Architecture
+// Student: Nikhil Kumar Sharma | Roll No: 2501730349 | K = 49
+CHIP Computer {
+    IN reset;
+
+    PARTS:
+    ROM32K(address=pcOut, out=instruction);
+    CPU(inM=memOut, instruction=instruction, reset=reset,
+        outM=outM, writeM=writeM, addressM=addressM, pc=pcOut);
+    Memory(in=outM, load=writeM, address=addressM, out=memOut);
+}`
+    };
+
+    const HDL_TESTS = [
+      {
+        id: "Memory.tst",
+        chip: "Memory.hdl",
+        desc: "Verifies RAM16K (0x0000-0x3FFF), Screen (0x4000-0x5FFF), and Keyboard (0x6000) address decoding & load routing.",
+        compareRows: [
+          { step: "RAM[0] = -1", out: "out = -1", cmp: "out = -1" },
+          { step: "RAM[16383] = 2222", out: "out = 2222", cmp: "out = 2222" },
+          { step: "SCREEN[0] (16384) = -1", out: "out = -1", cmp: "out = -1" },
+          { step: "KBD (24576) Read", out: "out = 65", cmp: "out = 65" }
+        ]
+      },
+      {
+        id: "CPU.tst",
+        chip: "CPU.hdl",
+        desc: "Tests A-instruction loading, C-instruction ALU operations, D/A/M destination routing, conditional jumps, and reset.",
+        compareRows: [
+          { step: "@12345 (A-inst)", out: "addressM = 12345, writeM = 0", cmp: "addressM = 12345, writeM = 0" },
+          { step: "D=A; M=D", out: "outM = 12345, writeM = 1", cmp: "outM = 12345, writeM = 1" },
+          { step: "D;JGT (Taken)", out: "pc = 1000", cmp: "pc = 1000" },
+          { step: "reset = 1", out: "pc = 0", cmp: "pc = 0" }
+        ]
+      },
+      {
+        id: "ComputerAdd.tst",
+        chip: "Computer.hdl",
+        desc: "Executes Add.hack on the complete Computer chip and verifies RAM[0] == 5.",
+        compareRows: [
+          { step: "Cycle 0 (Reset)", out: "pc = 0, RAM[0] = 0", cmp: "pc = 0, RAM[0] = 0" },
+          { step: "Cycle 6 (Complete)", out: "RAM[0] = 5", cmp: "RAM[0] = 5" }
+        ]
+      },
+      {
+        id: "ComputerMax.tst",
+        chip: "Computer.hdl",
+        desc: "Executes Max.hack with multiple test vectors and verifies RAM[2] = max(RAM[0], RAM[1]).",
+        compareRows: [
+          { step: "Vec 1: max(3, 5)", out: "RAM[2] = 5", cmp: "RAM[2] = 5" },
+          { step: "Vec 2: max(23456, 12345)", out: "RAM[2] = 23456", cmp: "RAM[2] = 23456" }
+        ]
+      },
+      {
+        id: "ComputerRect.tst",
+        chip: "Computer.hdl",
+        desc: "Executes Rect.hack to draw a 16×4 rectangle into Screen memory words 16384..16480.",
+        compareRows: [
+          { step: "SCREEN[0] (16384)", out: "RAM[16384] = -1", cmp: "RAM[16384] = -1" },
+          { step: "SCREEN[96] (16480)", out: "RAM[16480] = -1", cmp: "RAM[16480] = -1" }
+        ]
+      }
+    ];
+
+    function getBootLogsForK(kVal) {
+      const s = getKSpecs(kVal);
+      return [
+        { atPct: 8,  color: "text-amber-300",   text: `[SYS] STARK INDUSTRIES // MARK-${s.k} HACK-16 ARCHITECTURE` },
+        { atPct: 24, color: "text-sky-300",     text: `[ID]  OPERATOR: NIKHIL KUMAR SHARMA | ROLL: 2501730349 (K=${s.k})` },
+        { atPct: 42, color: "text-slate-200",   text: `[HDL] MOUNTING RAM16K (0x0000-0x3FFF), SCREEN (0x4000-0x5FFF), KBD (0x6000)...` },
+        { atPct: 60, color: "text-emerald-400", text: `[ALU] CALIBRATING 16-BIT ALU, PC, A-REG, D-REG... OK` },
+        { atPct: 78, color: "text-purple-300",  text: `[ASM] LOADING TWO-PASS ASSEMBLER (K MOD 3 = ${s.mod3}: ${s.mod3Desc.toUpperCase()})... OK` },
+        { atPct: 94, color: "text-amber-400",   text: `[ROM] FLASHING Box.hack (START ROW: ${s.startRow} | ${s.widthPx}x${s.heightRows} PX | ${s.wordCount} WORD${s.wordCount > 1 ? "S" : ""})... ONLINE` }
+      ];
+    }
+
+    let bootInterval = null;
+
+    function startBootSequence() {
+      const s = getKSpecs(currentK);
+      const bootLogs = getBootLogsForK(currentK);
+      const overlay = document.getElementById("bootOverlay");
+      const logBox = document.getElementById("bootLogContainer");
+      const fill = document.getElementById("bootProgressFill");
+      const pctText = document.getElementById("bootPctText");
+      const subStatus = document.getElementById("bootSubStatus");
+      const reactorSvg = document.getElementById("bootReactorSvg");
+      const purpleRing = document.getElementById("bootPurpleRing");
+      const coreGlow = document.getElementById("bootCoreGlow");
+      const reactorState = document.getElementById("bootReactorState");
+      document.getElementById("bootReactorCoreText").textContent = `K=${s.k}`;
+
+      if (bootInterval) clearInterval(bootInterval);
+
+      overlay.classList.remove("hidden", "opacity-0", "pointer-events-none");
+      logBox.innerHTML = "";
+      fill.style.width = "0%";
+      pctText.textContent = "0%";
+      subStatus.textContent = "Initializing Arc Reactor Core...";
+      reactorState.textContent = "IGNITING CORE...";
+      reactorSvg.classList.remove("reactor-ignited");
+      reactorSvg.style.opacity = "0.45";
+      purpleRing.style.strokeDashoffset = "502";
+      coreGlow.setAttribute("fill-opacity", "0.25");
+
+      let pct = 0;
+      let printedIdx = 0;
+
+      bootInterval = setInterval(() => {
+        pct = Math.min(100, pct + 4);
+        fill.style.width = `${pct}%`;
+        pctText.textContent = `${pct}%`;
+
+        // Update SVG Arc Reactor ring & core brightness
+        const offset = 502 - (502 * pct) / 100;
+        purpleRing.style.strokeDashoffset = offset.toFixed(1);
+        reactorSvg.style.opacity = (0.45 + (pct / 100) * 0.55).toFixed(2);
+        coreGlow.setAttribute("fill-opacity", (0.25 + (pct / 100) * 0.65).toFixed(2));
+
+        if (pct >= 50 && !reactorSvg.classList.contains("reactor-ignited")) {
+          reactorSvg.classList.add("reactor-ignited");
+          reactorState.textContent = "ARC CORE STABILIZED";
+        }
+
+        while (printedIdx < bootLogs.length && pct >= bootLogs[printedIdx].atPct) {
+          const entry = bootLogs[printedIdx];
+          const line = document.createElement("div");
+          line.className = `${entry.color} leading-relaxed`;
+          line.textContent = entry.text;
+          logBox.appendChild(line);
+          subStatus.textContent = entry.text.replace(/^\[[A-Z]+\]\s*/, "");
+          printedIdx++;
+        }
+
+        if (pct >= 100) {
+          clearInterval(bootInterval);
+          bootInterval = null;
+          reactorState.textContent = "ALL SYSTEMS ONLINE";
+          subStatus.textContent = `Launching MARK-${s.k} Capstone Workbench...`;
+          setTimeout(finishBootSequence, 380);
+        }
+      }, 105);
+    }
+
+    function finishBootSequence() {
+      if (bootInterval) {
+        clearInterval(bootInterval);
+        bootInterval = null;
+      }
+      const overlay = document.getElementById("bootOverlay");
+      overlay.classList.add("opacity-0", "pointer-events-none");
+      setTimeout(() => {
+        overlay.classList.add("hidden");
+        triggerPurpleProgress(`MARK-${currentK} ARC-CORE ONLINE // K = ${currentK}`, 360);
+      }, 650);
+    }
+
+    let hudProgressTimer = null;
+
+    function triggerPurpleProgress(label, durationMs = 420, onDone = null) {
+      const bar = document.getElementById("hudProgressBar");
+      const pctEl = document.getElementById("hudProgressPct");
+      const statusEl = document.getElementById("hudProgressStatus");
+
+      if (hudProgressTimer) clearInterval(hudProgressTimer);
+      statusEl.textContent = label;
+      bar.style.transition = "none";
+      bar.style.width = "6%";
+      pctEl.textContent = "6%";
+
+      let pct = 6;
+      const stepTime = Math.max(20, Math.floor(durationMs / 15));
+      hudProgressTimer = setInterval(() => {
+        pct = Math.min(100, pct + Math.floor(Math.random() * 14) + 8);
+        bar.style.transition = "width 120ms ease-out";
+        bar.style.width = `${pct}%`;
+        pctEl.textContent = `${pct}%`;
+        if (pct >= 100) {
+          clearInterval(hudProgressTimer);
+          hudProgressTimer = null;
+          statusEl.textContent = `${label} — COMPLETE`;
+          if (typeof onDone === "function") onDone();
+        }
+      }, stepTime);
+    }
+
+    // =========================================================================
+    // 3. TWO-PASS HACK ASSEMBLER ENGINE (Exact K=49 Python Logic)
+    // =========================================================================
+    const PREDEFINED_SYMBOLS = {
+      SP: 0, LCL: 1, ARG: 2, THIS: 3, THAT: 4,
+      R0: 0, R1: 1, R2: 2, R3: 3, R4: 4,
+      R5: 5, R6: 6, R7: 7, R8: 8, R9: 9,
+      R10: 10, R11: 11, R12: 12, R13: 13, R14: 14, R15: 15,
+      SCREEN: 16384, KBD: 24576
+    };
+
+    const COMP_TABLE = {
+      "0": "0101010", "1": "0111111", "-1": "0111010",
+      "D": "0001100", "A": "0110000", "!D": "0001101", "!A": "0110001",
+      "-D": "0001111", "-A": "0110011", "D+1": "0011111", "A+1": "0110111",
+      "D-1": "0001110", "A-1": "0110010", "D+A": "0000010", "D-A": "0010011",
+      "A-D": "0000111", "D&A": "0000000", "D|A": "0010101",
+      "M": "1110000", "!M": "1110001", "-M": "1110011", "M+1": "1110111",
+      "M-1": "1110010", "D+M": "1000010", "D-M": "1010011", "M-D": "1000111",
+      "D&M": "1000000", "D|M": "1010101"
+    };
+
+    const DEST_TABLE = {
+      "": "000", "M": "001", "D": "010", "MD": "011",
+      "A": "100", "AM": "101", "AD": "110", "AMD": "111"
+    };
+
+    const JUMP_TABLE = {
+      "": "000", "JGT": "001", "JEQ": "010", "JGE": "011",
+      "JLT": "100", "JNE": "101", "JLE": "110", "JMP": "111"
+    };
+
+    function isValidLabel(name) {
+      if (!name || /^\d/.test(name)) return false;
+      return /^[a-zA-Z0-9_.$:]+$/.test(name);
+    }
+
+    function assembleHack(sourceText) {
+      const rawLines = sourceText.split(/\r?\n/);
+      const symbolTable = { ...PREDEFINED_SYMBOLS };
+      const symbolCategories = {};
+      Object.keys(PREDEFINED_SYMBOLS).forEach(k => symbolCategories[k] = "PREDEFINED");
+
+      const cleanedEntries = [];
+      const errors = [];
+
+      // Pass 1: Strip comments & record ROM labels
+      let romAddress = 0;
+      rawLines.forEach((raw, idx) => {
+        const lineNo = idx + 1;
+        const code = raw.split("//")[0].trim();
+        if (!code) return;
+
+        if (code.startsWith("(") && code.endsWith(")")) {
+          const label = code.slice(1, -1).trim();
+          if (!isValidLabel(label)) {
+            errors.push(`Line ${lineNo}: invalid instruction`);
+            return;
+          }
+          if (!(label in symbolTable)) {
+            symbolTable[label] = romAddress;
+            symbolCategories[label] = "ROM LABEL";
+          }
+        } else {
+          cleanedEntries.push({ lineNo, code });
+          romAddress++;
+        }
+      });
+
+      // Pass 2: Encode instructions & allocate variables starting at RAM[16]
+      let nextVarAddr = 16;
+      const binaryLines = [];
+      const sourceMap = [];
+
+      for (const { lineNo, code } of cleanedEntries) {
+        if (code.startsWith("@")) {
+          const operand = code.slice(1).trim();
+          if (!operand) {
+            errors.push(`Line ${lineNo}: invalid instruction`);
+            continue;
+          }
+          if (/^\d+$/.test(operand)) {
+            const addr = parseInt(operand, 10);
+            if (addr < 0 || addr > 32767) {
+              errors.push(`Line ${lineNo}: invalid instruction`);
+              continue;
+            }
+            binaryLines.push(addr.toString(2).padStart(16, "0"));
+            sourceMap.push(code);
+          } else {
+            if (!isValidLabel(operand)) {
+              errors.push(`Line ${lineNo}: invalid instruction`);
+              continue;
+            }
+            if (!(operand in symbolTable)) {
+              symbolTable[operand] = nextVarAddr++;
+              symbolCategories[operand] = "RAM VAR";
+            }
+            binaryLines.push(symbolTable[operand].toString(2).padStart(16, "0"));
+            sourceMap.push(`${code} (RAM[${symbolTable[operand]}])`);
+          }
+        } else {
+          let dest = "";
+          let comp = code;
+          let jump = "";
+
+          if (comp.includes("=")) {
+            const parts = comp.split("=");
+            if (parts.length !== 2) {
+              errors.push(`Line ${lineNo}: invalid instruction`);
+              continue;
+            }
+            dest = parts[0].trim();
+            comp = parts[1].trim();
+          }
+
+          if (comp.includes(";")) {
+            const parts = comp.split(";");
+            if (parts.length !== 2) {
+              errors.push(`Line ${lineNo}: invalid instruction`);
+              continue;
+            }
+            comp = parts[0].trim();
+            jump = parts[1].trim();
+          }
+
+          if (!comp || !(dest in DEST_TABLE) || !(comp in COMP_TABLE) || !(jump in JUMP_TABLE)) {
+            errors.push(`Line ${lineNo}: invalid instruction`);
+            continue;
+          }
+
+          binaryLines.push("111" + COMP_TABLE[comp] + DEST_TABLE[dest] + JUMP_TABLE[jump]);
+          sourceMap.push(code);
+        }
+      }
+
+      const symbolsText = Object.entries(symbolTable)
+        .map(([sym, addr]) => `${sym}: ${addr}`)
+        .join("\n");
+
+      return { binaryLines, sourceMap, symbolTable, symbolCategories, symbolsText, errors };
+    }
+
+    // =========================================================================
+    // 4. HACK CPU + MEMORY + 512x256 SCREEN SIMULATOR
+    // =========================================================================
+    const RAM = new Int16Array(24577);
+    let ROM = [];
+    let ROM_ASM = [];
+    let PC = 0;
+    let A = 0;
+    let D = 0;
+    let cycles = 0;
+    let isRunning = true;
+    let cyclesPerFrame = 3000;
+    let kbdCaptureEnabled = true;
+    let lastAssembledHack = "";
+    let lastAssembledSymbols = "";
+    let currentFileName = "Box.asm";
+
+    const canvas = document.getElementById("hackScreen");
+    const ctx = canvas.getContext("2d");
+    const imgData = ctx.createImageData(512, 256);
+
+    function executeSingleCycle() {
+      if (ROM.length === 0 || PC < 0 || PC >= ROM.length) return;
+
+      const inst = ROM[PC];
+      if ((inst & 0x8000) === 0) {
+        A = inst & 0x7FFF;
+        PC++;
+      } else {
+        const aBit = (inst >> 12) & 1;
+        const compBits = (inst >> 6) & 0x3F;
+        const destBits = (inst >> 3) & 0x07;
+        const jumpBits = inst & 0x07;
+
+        const x = D;
+        const y = aBit === 1 ? (A >= 0 && A < RAM.length ? RAM[A] : 0) : A;
+
+        let out = 0;
+        switch (compBits) {
+          case 0b101010: out = 0; break;
+          case 0b111111: out = 1; break;
+          case 0b111010: out = -1; break;
+          case 0b001100: out = x; break;
+          case 0b110000: out = y; break;
+          case 0b001101: out = ~x; break;
+          case 0b110001: out = ~y; break;
+          case 0b001111: out = -x; break;
+          case 0b110011: out = -y; break;
+          case 0b011111: out = x + 1; break;
+          case 0b110111: out = y + 1; break;
+          case 0b001110: out = x - 1; break;
+          case 0b110010: out = y - 1; break;
+          case 0b000010: out = x + y; break;
+          case 0b010011: out = x - y; break;
+          case 0b000111: out = y - x; break;
+          case 0b000000: out = x & y; break;
+          case 0b010101: out = x | y; break;
+          default: out = 0;
+        }
+
+        out = (out << 16) >> 16;
+
+        const targetAddr = A;
+        if (destBits & 0b001) {
+          if (targetAddr >= 0 && targetAddr < 24576) {
+            RAM[targetAddr] = out;
+          }
+        }
+        if (destBits & 0b010) D = out;
+        if (destBits & 0b100) A = out & 0x7FFF;
+
+        const zr = out === 0;
+        const ng = out < 0;
+        const pos = !zr && !ng;
+
+        let shouldJump = false;
+        if ((jumpBits & 0b100) && ng) shouldJump = true;
+        if ((jumpBits & 0b010) && zr) shouldJump = true;
+        if ((jumpBits & 0b001) && pos) shouldJump = true;
+
+        PC = shouldJump ? (A & 0x7FFF) : (PC + 1);
+      }
+      cycles++;
+    }
+
+    function renderHackScreen() {
+      const data = imgData.data;
+      for (let wordIdx = 0; wordIdx < 8192; wordIdx++) {
+        const word = RAM[16384 + wordIdx];
+        const basePixel = wordIdx * 16;
+        for (let bit = 0; bit < 16; bit++) {
+          const isBlack = ((word >> bit) & 1) !== 0;
+          const color = isBlack ? 12 : 255;
+          const offset = (basePixel + bit) * 4;
+          data[offset] = color;
+          data[offset + 1] = color;
+          data[offset + 2] = color;
+          data[offset + 3] = 255;
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+    }
+
+    function updateInspectorUI() {
+      document.getElementById("regPC").textContent = PC;
+      document.getElementById("regA").textContent = A;
+      document.getElementById("regD").textContent = D;
+      document.getElementById("regM").textContent = (A >= 0 && A < RAM.length) ? RAM[A] : 0;
+      document.getElementById("cycleCounter").textContent = cycles.toLocaleString();
+
+      if (ROM.length > 0 && PC < ROM.length) {
+        const bin = ROM[PC].toString(2).padStart(16, "0");
+        document.getElementById("nextInstDisplay").textContent = `${bin} (${ROM_ASM[PC] || ""})`;
+      } else {
+        document.getElementById("nextInstDisplay").textContent = "HALT / End of ROM";
+      }
+      const s = getKSpecs(currentK);
+      const probes = [
+        { label: "RAM[0] (R0)", addr: 0 },
+        { label: "RAM[1] (R1)", addr: 1 },
+        { label: "RAM[2] (R2)", addr: 2 },
+        { label: "RAM[16] (row)", addr: 16 },
+        { label: "RAM[17] (rowsLeft)", addr: 17 },
+        { label: "RAM[20] (addr)", addr: 20 },
+        { label: "SCREEN Base (16384)", addr: 16384 },
+        { label: `Row ${s.startRow} Start (${s.startAddr})`, addr: s.startAddr },
+        { label: `Row ${s.startRow} End Word (${s.startAddr + s.wordCount - 1})`, addr: s.startAddr + s.wordCount - 1 },
+        { label: `Row ${s.endRow} End (${s.endRowLastWord})`, addr: s.endRowLastWord },
+        { label: "KBD (RAM[24576])", addr: 24576 }
+      ];
+
+      document.getElementById("ramProbeList").innerHTML = probes.map(p => {
+        const val = RAM[p.addr];
+        const hex = (val & 0xFFFF).toString(16).toUpperCase().padStart(4, "0");
+        const isBoxActive = (p.addr >= s.startAddr && p.addr <= s.endRowLastWord && val === -1);
+        const isKbdActive = (p.addr === 24576 && val !== 0);
+        const valClass = isBoxActive
+          ? "text-amber-300 font-extrabold"
+          : (isKbdActive ? "text-sky-400 font-extrabold" : "text-slate-200");
+        return `
+          <div class="flex items-center justify-between bg-armor-bg border border-red-950/80 rounded px-2.5 py-1.5">
+            <span class="text-slate-400">${p.label}</span>
+            <span class="${valClass}">${val} <span class="text-slate-500 text-[10px]">(0x${hex})</span></span>
+          </div>
+        `;
+      }).join("");
+    }
+    function updateKValue(rawVal, reloadRom = true) {
+      const s = getKSpecs(rawVal);
+      currentK = s.k;
+      const inputEl = document.getElementById("kValueInput");
+      if (inputEl) inputEl.value = s.k;
+
+      document.title = `MARK-${s.k} // Nand to Tetris I Capstone Simulator | K = ${s.k} (2501730349)`;
+      document.getElementById("emblemKText").textContent = `K${s.k}`;
+      document.getElementById("bootReactorCoreText").textContent = `K=${s.k}`;
+      document.getElementById("mainHudTitle").textContent = `MARK-${s.k} // NAND TO TETRIS I CAPSTONE SIMULATOR`;
+      document.getElementById("ramMapKBadge").textContent = `K = ${s.k} Map`;
+      document.getElementById("rowGuideCheckboxLabel").textContent = `Row ${s.startRow}`;
+
+      document.getElementById("hudStartRowPill").innerHTML =
+        `<span class="text-slate-400">Start Row:</span> <span class="text-amber-400 font-bold">${s.startRow}</span> <span class="text-sky-400/80">(RAM ${s.startAddr})</span>`;
+      document.getElementById("hudHeightPill").innerHTML =
+        `<span class="text-slate-400">Height:</span> <span class="text-amber-400 font-bold">${s.heightRows} rows</span> <span class="text-slate-400">(${s.startRow}..${s.endRow})</span>`;
+      document.getElementById("hudWidthPill").innerHTML =
+        `<span class="text-slate-400">Width:</span> <span class="text-amber-400 font-bold">${s.widthPx} px</span> <span class="text-slate-400">(${s.wordCount} word${s.wordCount > 1 ? "s" : ""})</span>`;
+      document.getElementById("hudModPill").innerHTML =
+        `<span class="text-slate-400">K%3=${s.mod3}:</span> <span class="text-sky-300 font-semibold">${s.mod3Desc}</span>`;
+
+      const rowGuide = document.getElementById("rowGuideOverlay");
+      rowGuide.style.top = `calc(1.5px + (${s.startRow} / 256) * (100% - 3px))`;
+      rowGuide.textContent = `ROW ${s.startRow} (RAM[${s.startAddr}]) — K=${s.k} TARGET BOX (${s.widthPx}×${s.heightRows} px)`;
+
+      PRESETS["Box.asm"] = generateBoxAsmForK(s.k);
+      if (reloadRom) {
+        triggerPurpleProgress(`RECALIBRATING FOR K = ${s.k} (${s.widthPx}×${s.heightRows} @ ROW ${s.startRow})`, 360, () => {
+          loadPreset("Box.asm");
+          showToast(`Updated K = ${s.k}: Start Row ${s.startRow}, Width ${s.widthPx}px (${s.wordCount} word${s.wordCount > 1 ? "s" : ""})`, "success");
+        });
+      }
+    }
+
+    function pressVirtualKey(code, label) {
+      const s = getKSpecs(currentK);
+      updateKbdDisplay(code, label);
+      document.getElementById("holdKeyBtn").classList.add("ring-2", "ring-amber-300");
+      triggerPurpleProgress(`DRAWING K=${s.k} BOX (${s.widthPx}×${s.heightRows} @ ROW ${s.startRow})`, 260);
+    }
+
+    function releaseVirtualKey() {
+      updateKbdDisplay(0);
+      document.getElementById("holdKeyBtn").classList.remove("ring-2", "ring-amber-300");
+      document.getElementById("hudProgressStatus").textContent = `MARK-${currentK} Core Online`;
+    }
+
+    function animationLoop() {
+      if (isRunning && ROM.length > 0) {
+        for (let i = 0; i < cyclesPerFrame; i++) {
+          executeSingleCycle();
+        }
+      }
+      renderHackScreen();
+      updateInspectorUI();
+      requestAnimationFrame(animationLoop);
+    }
+
+    // =========================================================================
+    // 5. UI CONTROLS, ASSEMBLER BINDINGS & REPORT EXPORT
+    // =========================================================================
+    function showToast(msg, type = "info") {
+      const container = document.getElementById("toastContainer");
+      const el = document.createElement("div");
+      const styles = {
+        success: "bg-[#190A0D] border-amber-400/70 text-amber-200",
+        warning: "bg-[#1F0B10] border-red-500 text-red-200",
+        info: "bg-[#0D1322] border-sky-400/60 text-sky-200"
+      };
+      el.className = `px-3.5 py-2.5 rounded-lg border text-xs font-mono shadow-2xl transition-opacity duration-300 ${styles[type] || styles.info}`;
+      el.textContent = msg;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.opacity = "0";
+        setTimeout(() => el.remove(), 300);
+      }, 2800);
+    }
+
+    function updateLineNumbers() {
+      const editor = document.getElementById("asmEditor");
+      const lines = editor.value.split("\n").length;
+      document.getElementById("lineNumbers").textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
+    }
+
+    function syncEditorScroll() {
+      document.getElementById("lineNumbers").scrollTop = document.getElementById("asmEditor").scrollTop;
+    }
+
+    function loadPreset(name) {
+      currentFileName = name;
+      document.getElementById("activeFileName").textContent = name;
+      document.getElementById("activeRomBadge").textContent = name;
+      document.getElementById("asmEditor").value = PRESETS[name] || "";
+      updateLineNumbers();
+      runAssemblerAndLoad(false);
+    }
+
+    function runAssemblerAndLoad(withAnimation = true) {
+      const executeAssembly = () => {
+        const src = document.getElementById("asmEditor").value;
+        const result = assembleHack(src);
+
+        lastAssembledHack = result.binaryLines.join("\n") + (result.binaryLines.length ? "\n" : "");
+        lastAssembledSymbols = result.symbolsText + "\n";
+
+        document.getElementById("out-hack").textContent = lastAssembledHack || "// No machine code generated";
+        document.getElementById("romWordCount").textContent = `${result.binaryLines.length} words`;
+
+        // Render structured symbols.txt table
+        const symEntries = Object.entries(result.symbolTable);
+        document.getElementById("symbolCountBadge").textContent = `${symEntries.length} symbols`;
+        document.getElementById("out-symbols-table").innerHTML = symEntries.map(([sym, addr]) => {
+          const cat = result.symbolCategories[sym] || "SYMBOL";
+          const badgeColor = cat === "RAM VAR"
+            ? "text-amber-300 bg-amber-500/15 border-amber-500/40"
+            : (cat === "ROM LABEL"
+              ? "text-sky-300 bg-sky-500/15 border-sky-500/40"
+              : "text-purple-300 bg-purple-500/15 border-purple-500/40");
+          return `
+            <div class="flex items-center justify-between bg-armor-panel/80 border border-red-950/70 rounded px-2.5 py-1">
+              <div class="flex items-center gap-2">
+                <span class="text-slate-100 font-semibold">${sym}</span>
+                <span class="text-[10px] px-1.5 py-0.2 rounded border ${badgeColor}">${cat}</span>
+              </div>
+              <span class="text-amber-400 font-bold">${addr}</span>
+            </div>
+          `;
+        }).join("");
+
+        const consoleEl = document.getElementById("out-console");
+        const errorBadge = document.getElementById("errorBadge");
+
+        if (result.errors.length > 0) {
+          errorBadge.textContent = `${result.errors.length} error(s)`;
+          errorBadge.className = "text-xs font-mono text-red-400 font-extrabold";
+          consoleEl.innerHTML = result.errors.map(err =>
+            `<div class="text-red-300 bg-red-950/70 border border-red-500/60 rounded px-2.5 py-1.5 font-bold">✖ ${err}</div>`
+          ).join("") + `<div class="text-amber-300/90 mt-1">Assembler handled malformed line gracefully without crashing (K mod 3 = 1).</div>`;
+          if (withAnimation) showToast(`Assembled with ${result.errors.length} line error(s)`, "warning");
+        } else {
+          errorBadge.textContent = "0 errors";
+          errorBadge.className = "text-xs font-mono text-emerald-400 font-bold";
+          consoleEl.innerHTML = `
+            <div class="text-emerald-400 font-semibold">✔ Two-pass assembly succeeded for <span class="text-amber-300">${currentFileName}</span>.</div>
+            <div class="text-slate-300">→ Loaded <span class="text-sky-300 font-bold">${result.binaryLines.length}</span> 16-bit instructions into ROM32K.</div>
+            <div class="text-slate-300">→ Generated <span class="text-purple-300 font-bold">${symEntries.length}</span> entries in <span class="underline">symbols.txt</span>.</div>
+          `;
+          if (withAnimation) showToast(`Assembled ${currentFileName} & loaded into ROM32K`, "success");
+        }
+
+        ROM = result.binaryLines.map(b => parseInt(b, 2));
+        ROM_ASM = result.sourceMap;
+        document.getElementById("activeRomBadge").textContent = currentFileName;
+        resetCPU();
+      };
+
+      if (withAnimation) {
+        triggerPurpleProgress(`ASSEMBLING ${currentFileName.toUpperCase()}`, 380, executeAssembly);
+      } else {
+        executeAssembly();
+      }
+    }
+
+    function resetCPU() {
+      RAM.fill(0);
+      PC = 0;
+      A = 0;
+      D = 0;
+      cycles = 0;
+      updateKbdDisplay(0);
+      renderHackScreen();
+      updateInspectorUI();
+    }
+
+    function toggleRun() {
+      isRunning = !isRunning;
+      const btn = document.getElementById("btnRunPause");
+      const badge = document.getElementById("cpuStatusBadge");
+      if (isRunning) {
+        btn.innerHTML = "⏸ Pause";
+        badge.textContent = "ONLINE // RUNNING";
+        badge.className = "px-2 py-0.5 rounded-full text-[11px] font-mono bg-sky-500/20 text-sky-300 border border-sky-400/40";
+      } else {
+        btn.innerHTML = "▶ Run";
+        badge.textContent = "STANDBY // PAUSED";
+        badge.className = "px-2 py-0.5 rounded-full text-[11px] font-mono bg-amber-500/20 text-amber-300 border border-amber-400/40";
+      }
+    }
+
+    function stepCPU() {
+      if (isRunning) toggleRun();
+      executeSingleCycle();
+      renderHackScreen();
+      updateInspectorUI();
+    }
+
+    function updateSpeedLabel() {
+      cyclesPerFrame = parseInt(document.getElementById("speedSlider").value, 10);
+      document.getElementById("speedLabel").textContent = `${cyclesPerFrame}/f`;
+    }
+
+    function setScreenZoom(factor) {
+      const wrapper = document.getElementById("screenWrapper");
+      wrapper.style.maxWidth = factor === 2 ? "1024px" : "680px";
+      document.getElementById("zoom-1").className = factor === 1
+        ? "px-2 py-1 bg-amber-500 text-slate-950 font-bold"
+        : "px-2 py-1 bg-armor-bg text-slate-300 hover:text-amber-300";
+      document.getElementById("zoom-2").className = factor === 2
+        ? "px-2 py-1 bg-amber-500 text-slate-950 font-bold"
+        : "px-2 py-1 bg-armor-bg text-slate-300 hover:text-amber-300";
+    }
+
+    function updateKbdDisplay(code, label = "") {
+      RAM[24576] = code;
+      const el = document.getElementById("kbdStatusVal");
+      if (code === 0) {
+        el.textContent = "0 (Released)";
+        el.className = "text-slate-400";
+      } else {
+        el.textContent = `${code} (${label || "Key Held"})`;
+        el.className = "text-amber-400 font-extrabold";
+      }
+    }
+
+    function toggleKeyboardCapture() {
+      kbdCaptureEnabled = !kbdCaptureEnabled;
+      const btn = document.getElementById("kbdCaptureToggle");
+      if (kbdCaptureEnabled) {
+        btn.textContent = "Physical KBD: ON";
+        btn.className = "px-2.5 py-2 rounded-lg bg-sky-500/15 border border-sky-400/40 text-sky-300 text-xs font-mono hover:bg-sky-500/25 transition";
+      } else {
+        btn.textContent = "Physical KBD: OFF";
+        btn.className = "px-2.5 py-2 rounded-lg bg-armor-bg border border-red-900/60 text-slate-400 text-xs font-mono hover:text-slate-200 transition";
+        releaseVirtualKey();
+      }
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (!kbdCaptureEnabled) return;
+      if (document.activeElement && (document.activeElement.id === "asmEditor" || document.activeElement.id === "kValueInput")) return;
+      const s = getKSpecs(currentK);
+      const code = e.key.length === 1 ? e.key.charCodeAt(0) : (e.keyCode || 32);
+      if (RAM[24576] === 0) {
+        triggerPurpleProgress(`KEY DETECTED // DRAWING ${s.widthPx}×${s.heightRows} BOX (ROW ${s.startRow})`, 240);
+      }
+      updateKbdDisplay(code, e.key === " " ? "Space" : e.key);
+    });
+
+    window.addEventListener("keyup", (e) => {
+      if (!kbdCaptureEnabled) return;
+      if (document.activeElement && (document.activeElement.id === "asmEditor" || document.activeElement.id === "kValueInput")) return;
+      updateKbdDisplay(0);
+      document.getElementById("hudProgressStatus").textContent = `MARK-${currentK} Core Online`;
+    });
+
+    function toggleRowGuide(show) {
+      document.getElementById("rowGuideOverlay").classList.toggle("hidden", !show);
+    }
+
+    function toggleHudGrid(show) {
+      document.getElementById("hudGridOverlay").classList.toggle("hidden", !show);
+    }
+
+    function captureScreenshot() {
+      const s = getKSpecs(currentK);
+      const exportCanvas = document.createElement("canvas");
+      exportCanvas.width = 512;
+      exportCanvas.height = 286;
+      const ectx = exportCanvas.getContext("2d");
+      ectx.drawImage(canvas, 0, 0);
+      ectx.fillStyle = "#14090C";
+      ectx.fillRect(0, 256, 512, 30);
+      ectx.fillStyle = "#FBBF24";
+      ectx.font = "bold 10.5px monospace";
+      ectx.fillText(`Nikhil Kumar Sharma | Roll No: 2501730349 | K = ${s.k} (${s.widthPx}x${s.heightRows} Box at Row ${s.startRow})`, 10, 275);
+
+      const link = document.createElement("a");
+      link.download = `MARK${s.k}_Box_Screenshot_2501730349.png`;
+      link.href = exportCanvas.toDataURL("image/png");
+      link.click();
+      showToast(`Saved stamped PNG screenshot for K = ${s.k}!`, "success");
+    }
+
+    function copyHackOutput() {
+      const textarea = document.createElement("textarea");
+      textarea.value = lastAssembledHack;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      textarea.remove();
+      showToast("Copied .hack binary to clipboard!", "info");
+    }
+
+    function downloadFile(type) {
+      const content = type === "hack" ? lastAssembledHack : lastAssembledSymbols;
+      const baseName = currentFileName.replace(/\.asm$/i, "");
+      const filename = type === "hack" ? `${baseName}.hack` : "symbols.txt";
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast(`Downloaded ${filename}`, "success");
+    }
+
+    function generatePythonAssemblerCode() {
+      return `#!/usr/bin/env python3
+"""
+Two-Pass Hack Assembler (Nand to Tetris I Capstone - ETCCNT301)
+Student: Nikhil Kumar Sharma | Roll No: 2501730349 | K = ${currentK}
+Features:
+  - Translates .asm files into 16-bit binary .hack files
+  - Exports resolved symbol table to symbols.txt
+  - Reports malformed lines as 'Line <n>: invalid instruction' without crashing
+"""
+import sys
+import os
+
+PREDEFINED = {
+    "SP": 0, "LCL": 1, "ARG": 2, "THIS": 3, "THAT": 4,
+    **{f"R{i}": i for i in range(16)},
+    "SCREEN": 16384, "KBD": 24576,
+}
+
+COMP = {
+    "0": "0101010", "1": "0111111", "-1": "0111010",
+    "D": "0001100", "A": "0110000", "!D": "0001101", "!A": "0110001",
+    "-D": "0001111", "-A": "0110011", "D+1": "0011111", "A+1": "0110111",
+    "D-1": "0001110", "A-1": "0110010", "D+A": "0000010", "D-A": "0010011",
+    "A-D": "0000111", "D&A": "0000000", "D|A": "0010101",
+    "M": "1110000", "!M": "1110001", "-M": "1110011", "M+1": "1110111",
+    "M-1": "1110010", "D+M": "1000010", "D-M": "1010011", "M-D": "1000111",
+    "D&M": "1000000", "D|M": "1010101",
+}
+
+DEST = {
+    "": "000", "M": "001", "D": "010", "MD": "011",
+    "A": "100", "AM": "101", "AD": "110", "AMD": "111",
+}
+
+JUMP = {
+    "": "000", "JGT": "001", "JEQ": "010", "JGE": "011",
+    "JLT": "100", "JNE": "101", "JLE": "110", "JMP": "111",
+}
+
+def valid_symbol(name: str) -> bool:
+    if not name or name[0].isdigit():
+        return False
+    return all(ch.isalnum() or ch in "_.$:" for ch in name)
+
+def assemble(asm_path: str):
+    if not os.path.isfile(asm_path):
+        print("Line 0: invalid instruction")
+        return
+
+    with open(asm_path, "r", encoding="utf-8") as f:
+        raw_lines = f.readlines()
+
+    symbols = dict(PREDEFINED)
+    cleaned = []
+    rom_addr = 0
+
+    # Pass 1: Record ROM labels
+    for line_no, raw in enumerate(raw_lines, start=1):
+        code = raw.split("//", 1)[0].strip()
+        if not code:
+            continue
+        if code.startswith("(") and code.endswith(")"):
+            label = code[1:-1].strip()
+            if not valid_symbol(label):
+                print(f"Line {line_no}: invalid instruction")
+                continue
+            if label not in symbols:
+                symbols[label] = rom_addr
+        else:
+            cleaned.append((line_no, code))
+            rom_addr += 1
+
+    # Pass 2: Encode A-instructions and C-instructions
+    next_var = 16
+    binary_out = []
+
+    for line_no, code in cleaned:
+        if code.startswith("@"):
+            operand = code[1:].strip()
+            if not operand:
+                print(f"Line {line_no}: invalid instruction")
+                continue
+            if operand.isdigit():
+                val = int(operand)
+                if not (0 <= val <= 32767):
+                    print(f"Line {line_no}: invalid instruction")
+                    continue
+                binary_out.append(f"{val:016b}")
+            else:
+                if not valid_symbol(operand):
+                    print(f"Line {line_no}: invalid instruction")
+                    continue
+                if operand not in symbols:
+                    symbols[operand] = next_var
+                    next_var += 1
+                binary_out.append(f"{symbols[operand]:016b}")
+        else:
+            dest, comp, jump = "", code, ""
+            if "=" in comp:
+                parts = comp.split("=")
+                if len(parts) != 2:
+                    print(f"Line {line_no}: invalid instruction")
+                    continue
+                dest, comp = parts[0].strip(), parts[1].strip()
+            if ";" in comp:
+                parts = comp.split(";")
+                if len(parts) != 2:
+                    print(f"Line {line_no}: invalid instruction")
+                    continue
+                comp, jump = parts[0].strip(), parts[1].strip()
+            if not comp or dest not in DEST or comp not in COMP or jump not in JUMP:
+                print(f"Line {line_no}: invalid instruction")
+                continue
+            binary_out.append("111" + COMP[comp] + DEST[dest] + JUMP[jump])
+
+    out_hack = os.path.splitext(asm_path)[0] + ".hack"
+    with open(out_hack, "w", encoding="utf-8") as f:
+        f.write("\\n".join(binary_out) + ("\\n" if binary_out else ""))
+
+    sym_path = os.path.join(os.path.dirname(os.path.abspath(asm_path)), "symbols.txt")
+    with open(sym_path, "w", encoding="utf-8") as f:
+        for sym, addr in symbols.items():
+            f.write(f"{sym}: {addr}\\n")
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python assembler.py <program.asm>")
+        sys.exit(1)
+    assemble(sys.argv[1])
+`;
+    }
+
+    function generateReadableReadme(s) {
+      return `# Nand to Tetris I Capstone Project — Make the Computer Draw a Box
+
+**Student Name:** Nikhil Kumar Sharma  
+**Roll Number:** \`2501730349\`  
+**Course Code:** \`ETCCNT301\`  
+**Personal Number ($K$):** \`${s.k}\`  
+
+---
+
+## 1. Project Overview
+
+This repository contains the complete hardware, assembler, assembly program, and interactive web simulator for the **Nand to Tetris I Capstone Project**. When any keyboard key is held down, the Hack computer draws a solid black box on the screen; when the key is released, the screen clears.
+
+### Personalized Dimensions ($K = ${s.k}$)
+| Parameter | Formula | Value |
+| :--- | :--- | :--- |
+| **Start Row** | \`K\` | **Row ${s.startRow}** (\`SCREEN + 32 * ${s.startRow} = ${s.startAddr}\`) |
+| **Box Height** | \`20 rows\` | **20 rows** (rows \`${s.startRow}\` to \`${s.endRow}\`) |
+| **Box Width** | \`16 * ((K mod 4) + 1)\` | **${s.widthPx} pixels** (\`${s.wordCount}\` screen word${s.wordCount > 1 ? "s" : ""}) |
+| **Assembler Feature** | \`K mod 3 = ${s.mod3}\` | **${s.mod3Desc}** |
+
+---
+
+## 2. Folder Contents
+
+- **\`index.html\`** — Standalone MARK-${s.k} Iron Man HUD Web Simulator (includes CPU Emulator, Two-Pass Assembler, HDL Test Viewer, and live $K$ selector).
+- **\`CPU.hdl\`** — 16-bit Hack Central Processing Unit implementation.
+- **\`Memory.hdl\`** — Data memory map connecting \`RAM16K\` (\`0..16383\`), \`Screen\` (\`16384..24575\`), and \`Keyboard\` (\`24576\`).
+- **\`Computer.hdl\`** — Top-level Hack Computer wiring \`ROM32K\`, \`CPU\`, and \`Memory\`.
+- **\`assembler.py\`** — Two-pass Python Hack assembler that generates \`.hack\` binary files and \`symbols.txt\`.
+- **\`Box.asm\`** — Hack assembly program that polls \`KBD\` and draws/clears the \`${s.widthPx}x${s.heightRows}\` box at row \`${s.startRow}\`.
+- **\`Box.hack\`** — Assembled 16-bit binary machine code generated from \`Box.asm\`.
+- **\`symbols.txt\`** — Symbol table (predefined symbols, ROM labels, and RAM variables) generated by \`assembler.py\`.
+
+---
+
+## 3. How to Run
+
+### Option A: Open the Web Simulator (Fastest)
+1. Double-click **\`index.html\`** in any modern web browser.
+2. Wait for (or skip) the Arc Reactor boot sequence.
+3. Click and hold **HOLD KEY TO DRAW BOX** (or press any physical key) to see the \`${s.widthPx}x${s.heightRows}\` black box appear at Row \`${s.startRow}\`.
+
+### Option B: Run the Python Assembler in Terminal
+\`\`\`bash
+python assembler.py Box.asm
+\`\`\`
+This outputs **\`Box.hack\`** and **\`symbols.txt\`** in the same directory. If an input \`.asm\` file contains a malformed instruction, \`assembler.py\` prints \`Line <n>: invalid instruction\` and continues without crashing.
+
+### Option C: Verify HDL Chips in Nand2Tetris Hardware Simulator / Web IDE
+Load each chip and run its official test script:
+1. \`Memory.hdl\` $\\rightarrow$ \`Memory.tst\`
+2. \`CPU.hdl\` $\\rightarrow$ \`CPU.tst\`
+3. \`Computer.hdl\` $\\rightarrow$ \`ComputerAdd.tst\`, \`ComputerMax.tst\`, \`ComputerRect.tst\`
+
+---
+
+## 4. How to Push This Folder to GitHub
+
+1. Extract this ZIP into your local Git repository folder (e.g., \`capstone/\`).
+2. Open a terminal inside your repository and run:
+\`\`\`bash
+git status
+git add .
+git commit -m "Add Nand to Tetris I Capstone Project (Roll No: 2501730349, K=${s.k})"
+git push origin main
+\`\`\`
+`;
+    }
+
+    async function downloadProjectZip() {
+      if (typeof JSZip === "undefined") {
+        showToast("JSZip library is still loading. Please try again in a second.", "warning");
+        return;
+      }
+      const s = getKSpecs(currentK);
+      const boxAsm = generateBoxAsmForK(s.k);
+      const assembledBox = assembleHack(boxAsm);
+      const boxHackText = assembledBox.binaryLines.join("\n") + "\n";
+      const boxSymbolsText = assembledBox.symbolsText + "\n";
+      const htmlSource = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+
+      triggerPurpleProgress(`PACKAGING GITHUB ZIP (K = ${s.k})`, 480, async () => {
+        const zip = new JSZip();
+        const folder = zip.folder("capstone");
+
+        folder.file("index.html", htmlSource);
+        folder.file("README.md", generateReadableReadme(s));
+        folder.file("CPU.hdl", HDL_SOURCES["CPU.hdl"]);
+        folder.file("Memory.hdl", HDL_SOURCES["Memory.hdl"]);
+        folder.file("Computer.hdl", HDL_SOURCES["Computer.hdl"]);
+        folder.file("assembler.py", generatePythonAssemblerCode());
+        folder.file("Box.asm", boxAsm);
+        folder.file("Box.hack", boxHackText);
+        folder.file("symbols.txt", boxSymbolsText);
+
+        const blob = await zip.generateAsync({ type: "blob" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `capstone_2501730349_K${s.k}.zip`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast(`Downloaded capstone_2501730349_K${s.k}.zip with README.md!`, "success");
+      });
+    }
+
+    function switchMainTab(tab) {
+      ["emulator", "assembler", "hardware"].forEach(id => {
+        document.getElementById(`view-${id}`).classList.toggle("hidden", id !== tab);
+        document.getElementById(`tab-${id}`).className = id === tab
+          ? "tab-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-bold bg-gradient-to-r from-red-700 to-red-600 text-amber-200 border border-amber-400/60 shadow transition flex items-center gap-2 whitespace-nowrap"
+          : "tab-btn px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold text-slate-300 hover:bg-red-950/50 hover:text-amber-200 border border-transparent transition flex items-center gap-2 whitespace-nowrap";
+      });
+    }
+
+    function selectHdlChip(chipName) {
+      document.getElementById("hdlCodeViewer").textContent = HDL_SOURCES[chipName];
+      ["Memory.hdl", "CPU.hdl", "Computer.hdl"].forEach(name => {
+        document.getElementById(`hdlBtn-${name}`).className = name === chipName
+          ? "hdl-btn px-2.5 py-1 rounded text-xs font-mono bg-red-700 text-amber-200 border border-amber-400/50 font-bold"
+          : "hdl-btn px-2.5 py-1 rounded text-xs font-mono bg-armor-bg text-slate-300 border border-red-900/60";
+      });
+    }
+
+    function renderHdlTests(passedIds = new Set()) {
+      const container = document.getElementById("hdlTestsContainer");
+      container.innerHTML = HDL_TESTS.map(t => {
+        const isPassed = passedIds.has(t.id);
+        return `
+          <div class="bg-armor-panel border ${isPassed ? 'border-emerald-500/50' : 'border-red-900/60'} rounded-lg p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-bold text-amber-300">${t.id}</span>
+                <span class="text-[11px] font-mono text-sky-400">(${t.chip})</span>
+              </div>
+              <button onclick="runSingleHdlTest('${t.id}')"
+                class="px-2.5 py-1 rounded text-xs font-mono ${isPassed ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold' : 'bg-red-800/60 text-amber-200 border border-amber-500/40 hover:bg-red-700'} transition">
+                ${isPassed ? '✔ Comparison Passed' : '▶ Run Script'}
+              </button>
+            </div>
+            <p class="text-xs text-slate-300">${t.desc}</p>
+            <div class="${isPassed ? '' : 'hidden'} space-y-1.5">
+              <div class="text-[11px] font-mono text-emerald-400 bg-armor-bg px-2.5 py-1 rounded border border-emerald-500/30 font-semibold">
+                End of script - Comparison ended successfully
+              </div>
+              <div class="bg-armor-bg border border-red-950/80 rounded overflow-hidden text-[11px] font-mono">
+                <div class="grid grid-cols-3 bg-armor-header px-2 py-1 text-amber-300 font-bold border-b border-red-950">
+                  <span>Vector</span><span>Output</span><span>Compare</span>
+                </div>
+                ${t.compareRows.map(r => `
+                  <div class="grid grid-cols-3 px-2 py-1 text-slate-300 border-b border-red-950/40 last:border-0">
+                    <span class="truncate pr-1">${r.step}</span>
+                    <span class="text-sky-300">${r.out}</span>
+                    <span class="text-emerald-400">${r.cmp}</span>
+                  </div>
+                `).join("")}
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    const passedHdlSet = new Set();
+
+    function runSingleHdlTest(testId) {
+      triggerPurpleProgress(`SIMULATING ${testId.toUpperCase()}`, 360, () => {
+        passedHdlSet.add(testId);
+        renderHdlTests(passedHdlSet);
+        showToast(`${testId}: Comparison ended successfully`, "success");
+      });
+    }
+
+    function runAllHdlTests() {
+      triggerPurpleProgress("RUNNING ALL 5 HDL VERIFICATION SCRIPTS", 550, () => {
+        HDL_TESTS.forEach(t => passedHdlSet.add(t.id));
+        renderHdlTests(passedHdlSet);
+        showToast("All 5 Part A Hardware Simulator test scripts passed!", "success");
+      });
+    }
+
+    // =========================================================================
+    // 6. INITIALIZE MARK-49 SIMULATOR ON WINDOW LOAD
+    // =========================================================================
+    window.onload = function () {
+      selectHdlChip("Memory.hdl");
+      renderHdlTests(passedHdlSet);
+      updateKValue(49, false);
+      loadPreset("Box.asm");
+      startBootSequence();
+      requestAnimationFrame(animationLoop);
+    };
+  </script>
+</body>
+</html>

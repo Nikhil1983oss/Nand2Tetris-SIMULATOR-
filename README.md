@@ -1,7 +1,5 @@
-# Nand to Tetris I — Capstone Project (`ETCCNT301`)
+# Nand to Tetris I — Capstone Project
 
-**Student:** Nikhil Kumar Sharma  
-**Roll Number:** `2501730349`  
 **Personal Parameter ($K$):** `49`
 
 ---
